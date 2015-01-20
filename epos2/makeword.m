@@ -1,0 +1,9 @@
+function [ out ] = makeword( BYTEH, BYTEL )
+%MAKEWORD Builds a 16bit word from 2 bytes
+out = bitor(...
+    bitshift(uint16(BYTEH),8),...
+    uint16(BYTEL)...
+    );
+
+end
+

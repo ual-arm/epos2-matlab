@@ -79,6 +79,7 @@ classdef Epos2Controller < handle
                 ok=false; return;
             end
             
+            % d(2) = (node_id << 8) | (d(2) & 0x00FF)
             frame.data(2) = bitor(...
                 bitshift(me.node_id,8),...
                 bitand(frame.data(2), h('0x00ff')));
@@ -107,13 +108,23 @@ classdef Epos2Controller < handle
                 end
                 fwrite(me.m_serial, bitand(frame.crc,h('0xff')),'uint8'); % Low byte
                 fwrite(me.m_serial, bitsrl(frame.crc,8),'uint8'); % High byte
-                ok=true; 
-                return;
+
+                % Wait for ack:
+                [c,nRead]=fread(me.m_serial,1,'uint8');                    
+
+                if (nRead==1 && c=='O')
+                    ok=true; 
+                    return;
+                else
+                    warning('[Epos2Controller] Invalid EndACK received: "%c"',c);
+                    ok=false; 
+                    return;
+                end
             else
                 warning('[Epos2Controller] Invalid ACK received: "%c"',c);
                 ok=false; 
                 return;
-            end           
+            end
                         
         end % end send()
         
