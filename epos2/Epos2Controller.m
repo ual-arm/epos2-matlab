@@ -7,7 +7,7 @@ classdef Epos2Controller < handle
     %  Public properties
     % ----------------------------------------------------
     properties(Access=public)
-        serial_portname = 'COM1';   % Set to serial port name to be open in connect()
+        serial_portname = 'COM3';   % Set to serial port name to be open in connect()
         serial_baudrate = 115200;   % Desired serial port baudrate
         node_id         = uint8(1); % The target node ID (See EPOS2 docs)
         
@@ -199,6 +199,55 @@ classdef Epos2Controller < handle
             f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','FE'), makewordh('00','00')];
             ok=me.send(f);
         end
+        
+        function [ok]=cmd_startCurrentMode(me)
+               
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','FD'), makewordh('00','00')];
+            ok=me.send(f);
+        end
+        
+        function [ok]=cmd_sendCurrent(me,curr)
+            %Sets the Current Mode Setting Value. Curr is in mA
+            % current must be an integer
+            
+            curr_hex = '';
+
+            if curr >= 0
+                curr_hex = dec2hex(curr, 4);
+            else
+                curr_hex = dec2hex(2^16+curr, 4);
+            end
+               
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('20','30'), makewordh('01','00'), makewordh('(curr_hex)','00'), makewordh('00','00')];
+            ok=me.send(f);
+        end
+        
+        
+        
+        function [ok]=cmd_sendTargetPosition(me,pos)
+            
+            %Absolute
+            %Sets the TargetPosition for Profile Position mode
+            %position must be an integer.
+            
+            pos_hex = '';
+
+            if pos >= 0
+                pos_hex = dec2hex(pos, 8);
+            else
+                pos_hex = dec2hex(2^32+pos, 8);
+            end
+               
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('60','7A'), makewordh('01','00'), makewordh('(pos_hex(5:8)','(pos_hex(1:4)'), makewordh('00','00')];
+            ok=me.send(f);
+        end
+        
         
     end % end public methods
     

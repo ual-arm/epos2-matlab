@@ -4,6 +4,7 @@
 % ------------------------------------------------------------------------
 
 %% Test frame CRC calc:
+
 if (0)
     f=epos2_frame();
     f.opcode=epos2_frame.READ_OPCODE;
@@ -46,7 +47,7 @@ end
     
     ok=motor1.cmd_startVelocityMode();
     
-    %ReadVelocity
+    %ReadVelocity(TO DO)
     
     f=epos2_frame();
     f.opcode=epos2_frame.WRITE_OPCODE;
@@ -61,15 +62,26 @@ end
     
     
     %Start Current Mode
-    f=epos2_frame();
-    f.opcode=epos2_frame.WRITE_OPCODE;
-    f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','FD'), makewordh('00','00')];
-    motor1.send(f);
     
-    %Read Current
+    ok=motor1.cmd_startCurrentMode();
+    
+    %Read Current(TO DO)
     
     f=epos2_frame();
     f.opcode=epos2_frame.WRITE_OPCODE;
     f.data=[makewordh('10','01'), makewordh('20','27'), makewordh('01','00'), makewordh('00','00')];
     motor1.send(f);
-
+    
+    %Send Target Position (Absolute)
+    
+    ok=motor1.cmd_sendTargetPosition();
+    
+    %Send Target Position (Relative)
+    f=epos2_frame();
+    f.opcode=epos2_frame.WRITE_OPCODE;
+    f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('00','3F'), makewordh('00','00')];
+    motor1.send(f);
+    
+    %Send Current
+    
+    ok=motor1.cmd_sendCurrent();
