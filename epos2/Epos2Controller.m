@@ -127,6 +127,78 @@ classdef Epos2Controller < handle
             end
                         
         end % end send()
+
+        function [ok]=cmd_enable(me)
+            % Enable the EPOS2:
+            %Control word Firmware Specification- Section 8.2.85
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('00','0F'), makewordh('00','00')];
+            ok=me.send(f);
+        end
+        
+        function [ok]=cmd_disable(me)            
+
+           %Disable Operation
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('00','06'), makewordh('00','00')];
+            ok=me.send(f);
+    
+            %You can disconnect the object by typing "clear" or "motor1.disconnect()"
+        end
+        
+        function [ok]=cmd_homing(me)
+               
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','06'), makewordh('00','00')];
+            ok=me.send(f);
+        end
+        
+        function[ok]=cmd_startProfilePositionMode(me,profileVelocity)
+            
+            profileVelocity_hex = dec2hex(profileVelocity, 4);
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('60','81'), makewordh('01','00'), makewordh((profileVelocity_hex),'00'), makewordh('00','00')];
+            ok=me.send(f);
+
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','01'), makewordh('00','00')];
+            ok=me.send(f);
+    
+        end
+            
+         function [ok]=cmd_sendVelocity(me, vel)
+            % Enable the EPOS2:
+            %Control word Firmware Specification- Section 8.2.85
+            
+            %Sets the Velocity mode = setting value
+            %vel an integer.
+
+            vel_hex = '';
+
+            if vel >= 0
+                vel_hex = dec2hex(vel, 8);
+            else
+                vel_hex = dec2hex(2^32+vel, 8);
+            end
+            
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('60','40'), makewordh('01','00'), makewordh((vel_hex(5:8)),(vel_hex(1:4))), makewordh('00','00')];
+            ok=me.send(f);
+         end
+        
+        function [ok]=cmd_startVelocityMode(me)
+               
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','FE'), makewordh('00','00')];
+            ok=me.send(f);
+        end
         
     end % end public methods
     

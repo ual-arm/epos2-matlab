@@ -22,8 +22,54 @@ motor1.serial_baudrate = 115200;
 % Try to connect:
 motor1.connect();
 
-% Velocity command:
+%Enable Operation
+if (1)
+    ok=motor1.cmd_enable();
+    
+    
+end
+%Disable Operation
+    ok=motor1.cmd_disable();
+    
 
+ %Start Homing
+ %Section 8.2.90
+    ok=motor1.cmd_homing();
+    
+ 
+ %Start Profile Position Mode
+    
+    ok=motor1.cmd_startProfilePositionMode();
+   
+    
+    %StartVelocityMode
+    
+    ok=motor1.cmd_startVelocityMode();
+    
+    %ReadVelocity
+    
+    f=epos2_frame();
+    f.opcode=epos2_frame.WRITE_OPCODE;
+    f.data=[makewordh('','6B'), makewordh('01','00'), makewordh('',''), makewordh('','')];
+    motor1.send(f);
+    
+    
+    %SendVelocity
+    %Section 8.2.54 Velocity Mode Setting Value
+    
+    ok=motor1.cmd_sendVelocity();
+    
+    
+    %Start Current Mode
+    f=epos2_frame();
+    f.opcode=epos2_frame.WRITE_OPCODE;
+    f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','FD'), makewordh('00','00')];
+    motor1.send(f);
+    
+    %Read Current
+    
+    f=epos2_frame();
+    f.opcode=epos2_frame.WRITE_OPCODE;
+    f.data=[makewordh('10','01'), makewordh('20','27'), makewordh('01','00'), makewordh('00','00')];
+    motor1.send(f);
 
-
-% You can disconnect the object by typing "clear" or "motor1.disconnect()"
