@@ -81,8 +81,8 @@ classdef Epos2Controller < handle
             
             % d(2) = (node_id << 8) | (d(2) & 0x00FF)
             frame.data(2) = bitor(...
-                bitshift(me.node_id,8),...
-                bitand(frame.data(2), h('0x00ff')));
+                uint16(bitshift(uint16(me.node_id),8)),...
+                bitand(frame.data(2),h('0x00ff')));
             frame.crc=frame.calc_crc();
             
             retries=0;
@@ -93,27 +93,27 @@ classdef Epos2Controller < handle
                     ok=false; return;
                 end
                 flushinput(me.m_serial); % make sure there're no pending input
-                fwrite(me.m_serial, frame.opcode,'uint8'); % OPCODE
+                me.sendByte(frame.opcode); % OPCODE
 
                 % Wait for answer:
                 [c,nRead]=fread(me.m_serial,1,'uint8');                    
             end
 
             if (c=='O')
-                fwrite(me.m_serial, frame.len,'uint8'); % LENGTH
-                assert(length(frame.data)==(1+frame.len));
-                for i=1:(1+frame.len),
-                    fwrite(me.m_serial, bitand(frame.data(i),h('0xff')),'uint8'); % Low byte
-                    fwrite(me.m_serial, bitsrl(frame.data(i),8),'uint8'); % High byte
+                nData = length(frame.data);
+                len=uint8(nData-1);
+                me.sendByte(len); % LENGTH
+                for i=1:nData,
+                    me.sendWord(frame.data(i));
                 end
-                fwrite(me.m_serial, bitand(frame.crc,h('0xff')),'uint8'); % Low byte
-                fwrite(me.m_serial, bitsrl(frame.crc,8),'uint8'); % High byte
+                me.sendWord(frame.crc);
 
                 % Wait for ack:
                 [c,nRead]=fread(me.m_serial,1,'uint8');                    
 
                 if (nRead==1 && c=='O')
-                    ok=true; 
+                    ok=true;
+                    fprintf('ACK OK\n');
                     return;
                 else
                     warning('[Epos2Controller] Invalid EndACK received: "%c"',c);
@@ -256,6 +256,15 @@ classdef Epos2Controller < handle
     % ----------------------------------------------------
     methods(Access=protected)
         
+        function []=sendByte(me,b)
+            fwrite(me.m_serial, uint8(b),'uint8');
+            fprintf('%02X ',b);
+        end
+        function []=sendWord(me,w16)
+            fwrite(me.m_serial, uint8(bitand(w16,h('0xff'))),'uint8'); % low byte
+            fwrite(me.m_serial, uint8( bitsrl(w16,8)),'uint8'); % high byte       
+            fprintf('%04X ',w16);
+        end
 
     end % end methods
     
