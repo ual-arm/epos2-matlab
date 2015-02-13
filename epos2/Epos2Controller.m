@@ -70,6 +70,52 @@ classdef Epos2Controller < handle
         end  % end disconnect()
         
         
+        function [ok]=send_and_wait_ack(me,frame)
+            % Calls send(), then wait for EPOS2 ack response and send my
+            % ACK.
+            ok = me.send(frame);
+            if (~ok)
+                return;  % error sending
+            end
+            
+            % Wait for EPOS2 ack frame:
+            % ------------------------------
+            % OPCODE     ( -> ACK) 
+            % LEN-1 | (DATA) | CRC   (-> ACK)
+            [c,nRead]=fread(me.m_serial,1,'uint8');
+            if (nRead~=1)
+                warning('Timeout waiting for EPOS2 response');
+                ok=false; return;
+            end
+            % OPCODE should 0
+            if (c~=0)
+                warning('Expecting OPCODE=0!!');
+                ok=false; return;
+            end
+            % send ACK:
+            me.sendByte('O');
+
+            [LEN_1,nRead]=fread(me.m_serial,1,'uint8');
+            if (nRead~=1)
+                warning('Timeout waiting for EPOS2 response len');
+                ok=false; return;
+            end
+            LEN=LEN_1+1;
+            [RESP,nRead]=fread(me.m_serial,LEN+1,'uint16');
+            if (nRead~=LEN+1)
+                warning('Timeout waiting for EPOS2 response data');
+                ok=false; return;
+            end
+            % TODO: Check CRC.
+            fprintf('Response: ');
+            for i=1:(LEN+1)
+                fprintf('0x%04X ',RESP(i));
+            end
+            % send ACK:
+            me.sendByte('O');
+            ok= true;
+        end
+        
         function [ok] = send(me, frame)
             % Generic method to send a frame to epos2, checking for errors, etc.
             % Returns 0(false) on any error, timeout,...
@@ -133,8 +179,23 @@ classdef Epos2Controller < handle
             %Control word Firmware Specification- Section 8.2.85
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('00','06'), makewordh('00','00')];
+            ok=me.send_and_wait_ack(f);
+            if (~ok) 
+                return;
+            end
+            pause(0.25);
+            
             f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('00','0F'), makewordh('00','00')];
-            ok=me.send(f);
+            ok=me.send_and_wait_ack(f);     
+            if (~ok) 
+                return;
+            end
+            pause(0.25);
+
+            f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('01','0F'), makewordh('00','00')];
+            ok=me.send_and_wait_ack(f);                
+            
         end
         
         function [ok]=cmd_disable(me)            
@@ -143,7 +204,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('00','06'), makewordh('00','00')];
-            ok=me.send(f);
+            ok=me.send_and_wait_ack(f);
     
             %You can disconnect the object by typing "clear" or "motor1.disconnect()"
         end
@@ -153,7 +214,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','06'), makewordh('00','00')];
-            ok=me.send(f);
+            ok=me.send_and_wait_ack(f);
         end
         
         function[ok]=cmd_startProfilePositionMode(me,profileVelocity)
@@ -162,12 +223,12 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','81'), makewordh('01','00'), makewordh((profileVelocity_hex),'00'), makewordh('00','00')];
-            ok=me.send(f);
+            ok=me.send_and_wait_ack(f);
 
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','01'), makewordh('00','00')];
-            ok=me.send(f);
+            ok=me.send_and_wait_ack(f);
     
         end
             
@@ -188,8 +249,8 @@ classdef Epos2Controller < handle
             
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
-            f.data=[makewordh('60','40'), makewordh('01','00'), makewordh((vel_hex(5:8)),(vel_hex(1:4))), makewordh('00','00')];
-            ok=me.send(f);
+            f.data=[makewordh('20','6B'), makewordh('01','00'), makewordh((vel_hex(1:4)),(vel_hex(5:8))), makewordh('00','00')];
+            ok=me.send_and_wait_ack(f);
          end
         
         function [ok]=cmd_startVelocityMode(me)
@@ -197,7 +258,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','FE'), makewordh('00','00')];
-            ok=me.send(f);
+            ok=me.send_and_wait_ack(f);
         end
         
         function [ok]=cmd_startCurrentMode(me)
@@ -205,7 +266,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','FD'), makewordh('00','00')];
-            ok=me.send(f);
+            ok=me.send_and_wait_ack(f);
         end
         
         function [ok]=cmd_sendCurrent(me,curr)
@@ -223,7 +284,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('20','30'), makewordh('01','00'), makewordh('(curr_hex)','00'), makewordh('00','00')];
-            ok=me.send(f);
+            ok=me.send_and_wait_ack(f);
         end
         
         
@@ -245,7 +306,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','7A'), makewordh('01','00'), makewordh('(pos_hex(5:8)','(pos_hex(1:4)'), makewordh('00','00')];
-            ok=me.send(f);
+            ok=me.send_and_wait_ack(f);
         end
         
         
