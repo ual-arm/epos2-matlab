@@ -25,12 +25,16 @@ motor1.connect();
 
 %Enable Operation
 if (1)
-    ok=motor1.cmd_enable();
+     ok=motor1.cmd_enable();
 %    ok=motor1.cmd_startCurrentMode();
 %    ok=motor1.cmd_startVelocityMode();
-    ok=motor1.cmd_sendVelocity(1000);
-    
-    
+%    ok=motor1.cmd_sendVelocity(1000);
+    ok=motor1.cmd_startPositionMode();
+%    ok=motor1.cmd_MaximalFollowingError();
+    ok=motor1.cmd_sendTargetPosition(2000);
+    ok=motor1.cmd_sendTargetPosition(3000);
+    ok=motor1.cmd_startVelocityMode();
+    ok=motor1.cmd_sendVelocity(2000);
     ok=motor1.cmd_disable();
    
 end
@@ -46,7 +50,7 @@ end
       
  %Start Profile Position Mode
     
- %   ok=motor1.cmd_startProfilePositionMode();
+   %ok=motor1.cmd_startProfilePositionMode();
    
     
     %StartVelocityMode
@@ -79,6 +83,8 @@ end
 %     ok=motor1.cmd_sendTargetPosition();
     
     %Send Target Position (Relative)
+    
+   % ok=motor1.cmd_sendTargetPosition(3);
 %     f=epos2_frame();
 %     f.opcode=epos2_frame.WRITE_OPCODE;
 %     f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('00','3F'), makewordh('00','00')];

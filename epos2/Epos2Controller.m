@@ -111,6 +111,7 @@ classdef Epos2Controller < handle
             for i=1:(LEN+1)
                 fprintf('0x%04X ',RESP(i));
             end
+            fprintf('\n');
             % send ACK:
             me.sendByte('O');
             ok= true;
@@ -231,6 +232,44 @@ classdef Epos2Controller < handle
             ok=me.send_and_wait_ack(f);
     
         end
+        
+        function[ok]=cmd_startPositionMode(me)
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','FF'), makewordh('00','00')];
+            ok=me.send_and_wait_ack(f);
+        end
+        
+        function[ok]=cmd_MaximalFollowingError(me)
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('65','60'), makewordh('00','01'), makewordh('20','4E'), makewordh('00','00')];
+            ok=me.send_and_wait_ack(f);
+        end
+        
+        
+         
+        function [ok]=cmd_sendTargetPosition(me,pos)
+            
+            %Absolute
+            %Sets the TargetPosition for Profile Position mode
+            %position must be an integer.
+            
+            pos_hex = '';
+
+            if pos >= 0
+                pos_hex = dec2hex(pos, 8);
+            else
+                pos_hex = dec2hex(2^32+pos, 8);
+            end
+               
+            f=epos2_frame();
+            f.opcode=epos2_frame.WRITE_OPCODE;
+            f.data=[makewordh('20','62'), makewordh('01','00'), makewordh(pos_hex(1:4),pos_hex(5:8)), makewordh('00','00')];
+            ok=me.send_and_wait_ack(f);
+            
+        end
+        
             
          function [ok]=cmd_sendVelocity(me, vel)
             % Enable the EPOS2:
@@ -249,7 +288,7 @@ classdef Epos2Controller < handle
             
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
-            f.data=[makewordh('20','6B'), makewordh('01','00'), makewordh((vel_hex(1:4)),(vel_hex(5:8))), makewordh('00','00')];
+            f.data=[makewordh('20','6B'), makewordh('01','00'), makewordh(vel_hex(1:4),vel_hex(5:8)), makewordh('00','00')];
             ok=me.send_and_wait_ack(f);
          end
         
@@ -289,26 +328,7 @@ classdef Epos2Controller < handle
         
         
         
-        function [ok]=cmd_sendTargetPosition(me,pos)
-            
-            %Absolute
-            %Sets the TargetPosition for Profile Position mode
-            %position must be an integer.
-            
-            pos_hex = '';
 
-            if pos >= 0
-                pos_hex = dec2hex(pos, 8);
-            else
-                pos_hex = dec2hex(2^32+pos, 8);
-            end
-               
-            f=epos2_frame();
-            f.opcode=epos2_frame.WRITE_OPCODE;
-            f.data=[makewordh('60','7A'), makewordh('01','00'), makewordh('(pos_hex(5:8)','(pos_hex(1:4)'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
-        end
-        
         
     end % end public methods
     
