@@ -23,6 +23,7 @@ motor1.serial_baudrate = 115200;
 % Try to connect:
 motor1.connect();
 
+
 %Enable Operation
 if (1)
      ok=motor1.cmd_enable();
@@ -36,7 +37,40 @@ if (1)
     ok=motor1.cmd_startVelocityMode();
     ok=motor1.cmd_sendVelocity(2000);
     ok=motor1.cmd_disable();
-   
+       
+end
+
+if (0)
+    f=epos2_frame();
+    f.opcode=epos2_frame.READ_OPCODE;
+    f.data=[makewordh('20','03'), makewordh('02','01')];
+    crc=f.calc_crc();
+    fprintf('%04X\n',crc)
+    % Should be: 0xA888
+end
+
+%% Test real comms:
+% Create object & set params:
+motor2 = Epos2Controller();
+motor2.serial_portname = 'COM4';
+motor2.serial_baudrate = 115200; 
+
+% Try to connect:
+motor2.connect();
+
+%Enable Operation
+if (1)
+     ok=motor2.cmd_enable();
+%    ok=motor1.cmd_startCurrentMode();
+%    ok=motor1.cmd_startVelocityMode();
+%    ok=motor1.cmd_sendVelocity(1000);
+    ok=motor2.cmd_startPositionMode();
+%    ok=motor1.cmd_MaximalFollowingError();
+    ok=motor2.cmd_sendTargetPosition(2000);
+    ok=motor2.cmd_sendTargetPosition(3000);
+    ok=motor2.cmd_startVelocityMode();
+    ok=motor2.cmd_sendVelocity(2000);
+    ok=motor2.cmd_disable();
 end
 %Disable Operation
 %    ok=motor1.cmd_disable();
