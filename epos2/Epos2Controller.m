@@ -256,6 +256,7 @@ classdef Epos2Controller < handle
             %position must be an integer.
             
             pos_hex = '';
+            pos = round(pos); % Eliminate fractional part
 
             if pos >= 0
                 pos_hex = dec2hex(pos, 8);
@@ -279,6 +280,7 @@ classdef Epos2Controller < handle
             %vel an integer.
 
             vel_hex = '';
+            vel = round(vel); % Eliminate fractional part
 
             if vel >= 0
                 vel_hex = dec2hex(vel, 8);
@@ -313,6 +315,7 @@ classdef Epos2Controller < handle
             % current must be an integer
             
             curr_hex = '';
+            curr = round(curr);
 
             if curr >= 0
                 curr_hex = dec2hex(curr, 4);
