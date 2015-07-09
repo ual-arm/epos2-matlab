@@ -10,8 +10,8 @@ classdef Epos2Controller < handle
         serial_portname = 'COM3';   % Set to serial port name to be open in connect()
         serial_baudrate = 115200;   % Desired serial port baudrate
         node_id         = uint8(1); % The target node ID (See EPOS2 docs)
-        
-        
+		usb_protocol    = 0;        % If !=0, send the SYNC frame header and do data 'stuff' (See Maxon Comm.Guide). Use only when connecting through USB link. This is *NOT* the same than RS232 thru a USB-RS232 converter!!
+        verbosity_level = 2;        % 0=quiet. 1=shows comms info. 2=shows all comms data and details
     end % end public props
     
     % ----------------------------------------------------
@@ -27,9 +27,7 @@ classdef Epos2Controller < handle
         end 
 
         function [ok] = connect(me)
-            % Tries to establish connection to the serial port. The first
-            % time it is called it tries to query the firmware model just
-            % to make sure the comms are OK. 
+            % Tries to establish connection to the serial port.
             % Returns true (1) if succeds
             if (~isempty(me.m_serial))
                 ok=true;
@@ -48,7 +46,9 @@ classdef Epos2Controller < handle
 
             % Tries to open:
             try
-                fprintf('[Epos2Controller] Trying to open serial port "%s"...\n',me.serial_portname);
+                if (me.verbosity_level>=1)
+                    fprintf('[Epos2Controller] Trying to open serial port "%s"...\n',me.serial_portname);
+                end
                 fopen(me.m_serial);
             catch
                % 
@@ -63,58 +63,97 @@ classdef Epos2Controller < handle
         
         function [] = disconnect(me)
             if (~isempty(me.m_serial))
-                fprintf('Closing serial port "%s"...\n',me.serial_portname);
+                if (me.verbosity_level>=1)
+                    fprintf('Closing serial port "%s"...\n',me.serial_portname);
+                end                    
                 fclose(me.m_serial);
                 me.m_serial=[];
             end
         end  % end disconnect()
         
         
-        function [ok]=send_and_wait_ack(me,frame)
-            % Calls send(), then wait for EPOS2 ack response and send my
-            % ACK.
+        function [ok]=send_and_wait_answer(me,frame)
+            % Calls send(), then wait for EPOS2 ack and/or response.
             ok = me.send(frame);
             if (~ok)
                 return;  % error sending
             end
             
-            % Wait for EPOS2 ack frame:
-            % ------------------------------
-            % OPCODE     ( -> ACK) 
-            % LEN-1 | (DATA) | CRC   (-> ACK)
-            [c,nRead]=fread(me.m_serial,1,'uint8');
-            if (nRead~=1)
-                warning('Timeout waiting for EPOS2 response');
-                ok=false; return;
-            end
-            % OPCODE should 0
-            if (c~=0)
-                warning('Expecting OPCODE=0!!');
-                ok=false; return;
-            end
-            % send ACK:
-            me.sendByte('O');
-
+            if (me.usb_protocol)
+                % USB: EPOS2 answers with a complete frame:
+                % ------------------------------
+                expected_answer = [me.DLE, me.STX, 0 ];  % 0: answer opcode
+                for k=1:length(expected_answer)
+                    [c,nRead]=fread(me.m_serial,1,'uint8');
+                    if (nRead~=1)
+                        if (me.verbosity_level>=1)
+                            warning('Timeout waiting for EPOS2 response');
+                        end
+                        ok=false; return;
+                    end
+                    if (c~=expected_answer(k))
+                        if (me.verbosity_level>=1)
+                            warning('Expecting RX=%02X, Actual RX=%02X!',expected_answer(k),c);
+                        end
+                        ok=false; return;
+                    end
+                end
+                
+            else
+                % RS232: Wait for EPOS2 ack frame:
+                % ------------------------------
+                % OPCODE     ( -> ACK) 
+                % LEN-1 | (DATA) | CRC   (-> ACK)
+                [c,nRead]=fread(me.m_serial,1,'uint8');
+                if (nRead~=1)
+                    if (me.verbosity_level>=1)
+                        warning('Timeout waiting for EPOS2 response');
+                    end
+                    ok=false; return;
+                end
+                % OPCODE should 0
+                if (c~=0)
+                    if (me.verbosity_level>=1)
+                        warning('Expecting OPCODE=0!!');
+                    end
+                    ok=false; return;
+                end
+                % send ACK:
+                me.sendByte('O');
+            end  % end RS-232
+            
+            % Receive len & data:
             [LEN_1,nRead]=fread(me.m_serial,1,'uint8');
             if (nRead~=1)
-                warning('Timeout waiting for EPOS2 response len');
+                if (me.verbosity_level>=1)
+                    warning('Timeout waiting for EPOS2 response len');
+                end
                 ok=false; return;
             end
             LEN=LEN_1+1;
             [RESP,nRead]=fread(me.m_serial,LEN+1,'uint16');
             if (nRead~=LEN+1)
-                warning('Timeout waiting for EPOS2 response data');
+                if (me.verbosity_level>=1)
+                    warning('Timeout waiting for EPOS2 response data');
+                end
                 ok=false; return;
             end
             % TODO: Check CRC.
-            fprintf('Response: ');
-            for i=1:(LEN+1)
-                fprintf('0x%04X ',RESP(i));
+            if (me.verbosity_level>=2)
+                fprintf('Response: ');
+                for i=1:(LEN+1)
+                    fprintf('0x%04X ',RESP(i));
+                end
+                fprintf('\n');
             end
-            fprintf('\n');
-            % send ACK:
-            me.sendByte('O');
-            ok= true;
+            
+            % (Only RS-232) send ACK:
+            if (~me.usb_protocol)
+                me.sendByte('O');
+            end
+            
+            % All fine.
+            ok= true;            
         end
         
         function [ok] = send(me, frame)
@@ -132,47 +171,70 @@ classdef Epos2Controller < handle
                 bitand(frame.data(2),h('0x00ff')));
             frame.crc=frame.calc_crc();
             
-            retries=0;
-            nRead=0;
-            while(nRead==0)
-                retries=retries+1;
-                if(retries>5)
-                    ok=false; return;
+            nData = length(frame.data);
+            len=uint8(nData-1);
+            
+            if (me.usb_protocol)
+                % USB protocol ------------------
+                % Send DLE + STD bytes before opcode (they don't count for CRC computation):
+                me.sendByte(me.DLE);
+                me.sendByte(me.STX);        
+                me.sendByteWithStuffing(frame.opcode);      % OPCODE
+                me.sendByteWithStuffing(len);               % LENGTH
+                for i=1:nData,  
+                    me.sendWordWithStuffing(frame.data(i)); % DATA
                 end
-                flushinput(me.m_serial); % make sure there're no pending input
-                me.sendByte(frame.opcode); % OPCODE
+                me.sendWordWithStuffing(frame.crc);         % CRC
+            else
+                % RS232 protocol ------------------
+                retries=0;
+                nRead=0;
+                while(nRead==0)
+                    retries=retries+1;
+                    if(retries>5)
+                        ok=false; return;
+                    end
+                    if(retries>1)
+                        flushinput(me.m_serial); % make sure there're no pending input
+                        pause(0.1);
+                    end
+                    me.sendByte(frame.opcode); % OPCODE
 
-                % Wait for answer:
-                [c,nRead]=fread(me.m_serial,1,'uint8');                    
-            end
-
-            if (c=='O')
-                nData = length(frame.data);
-                len=uint8(nData-1);
-                me.sendByte(len); % LENGTH
-                for i=1:nData,
-                    me.sendWord(frame.data(i));
+                    % Wait for answer:
+                    [c,nRead]=fread(me.m_serial,1,'uint8');                    
                 end
-                me.sendWord(frame.crc);
+                
+                if (c=='O')
+                    me.sendByte(len); % LENGTH
+                    for i=1:nData,
+                        me.sendWord(frame.data(i));
+                    end
+                    me.sendWord(frame.crc);
 
-                % Wait for ack:
-                [c,nRead]=fread(me.m_serial,1,'uint8');                    
+                    % Wait for ack:
+                    [c,nRead]=fread(me.m_serial,1,'uint8');                    
 
-                if (nRead==1 && c=='O')
-                    ok=true;
-                    fprintf('ACK OK\n');
-                    return;
+                    if (nRead==1 && c=='O')
+                        ok=true;
+                        if (me.verbosity_level>=2)
+                            fprintf('ACK OK\n');
+                        end
+                        return;
+                    else
+                        if (me.verbosity_level>=1)
+                            warning('[Epos2Controller] Invalid EndACK received: "%c"',c);
+                        end
+                        ok=false; 
+                        return;
+                    end
                 else
-                    warning('[Epos2Controller] Invalid EndACK received: "%c"',c);
+                    if (me.verbosity_level>=1)
+                        warning('[Epos2Controller] Invalid ACK received: "%c"',c);
+                    end
                     ok=false; 
                     return;
                 end
-            else
-                warning('[Epos2Controller] Invalid ACK received: "%c"',c);
-                ok=false; 
-                return;
-            end
-                        
+            end  % end case of RS232 protocol
         end % end send()
 
         function [ok]=cmd_enable(me)
@@ -181,21 +243,21 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('00','06'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
             if (~ok) 
                 return;
             end
             pause(0.25);
             
             f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('00','0F'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);     
+            ok=me.send_and_wait_answer(f);     
             if (~ok) 
                 return;
             end
             pause(0.25);
 
             f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('01','0F'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);                
+            ok=me.send_and_wait_answer(f);                
             
         end
         
@@ -205,7 +267,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','40'), makewordh('01','00'), makewordh('00','06'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
     
             %You can disconnect the object by typing "clear" or "motor1.disconnect()"
         end
@@ -215,7 +277,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','06'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
         end
         
         function[ok]=cmd_startProfilePositionMode(me,profileVelocity)
@@ -224,12 +286,12 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','81'), makewordh('01','00'), makewordh((profileVelocity_hex),'00'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
 
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','01'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
     
         end
         
@@ -237,14 +299,14 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','FF'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
         end
         
         function[ok]=cmd_MaximalFollowingError(me)
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('65','60'), makewordh('00','01'), makewordh('20','4E'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
         end
         
         
@@ -255,7 +317,6 @@ classdef Epos2Controller < handle
             %Sets the TargetPosition for Profile Position mode
             %position must be an integer.
             
-            pos_hex = '';
             pos = round(pos); % Eliminate fractional part
 
             if pos >= 0
@@ -267,7 +328,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('20','62'), makewordh('01','00'), makewordh(pos_hex(1:4),pos_hex(5:8)), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
             
         end
         
@@ -279,9 +340,7 @@ classdef Epos2Controller < handle
             %Sets the Velocity mode = setting value
             %vel an integer.
 
-            vel_hex = '';
             vel = round(vel); % Eliminate fractional part
-
             if vel >= 0
                 vel_hex = dec2hex(vel, 8);
             else
@@ -291,7 +350,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('20','6B'), makewordh('01','00'), makewordh(vel_hex(1:4),vel_hex(5:8)), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
          end
         
         function [ok]=cmd_startVelocityMode(me)
@@ -299,7 +358,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','FE'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
         end
         
         function [ok]=cmd_startCurrentMode(me)
@@ -307,7 +366,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('60','60'), makewordh('01','00'), makewordh('00','FD'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
         end
         
         function [ok]=cmd_sendCurrent(me,curr)
@@ -326,7 +385,7 @@ classdef Epos2Controller < handle
             f=epos2_frame();
             f.opcode=epos2_frame.WRITE_OPCODE;
             f.data=[makewordh('20','30'), makewordh('01','00'), makewordh('(curr_hex)','00'), makewordh('00','00')];
-            ok=me.send_and_wait_ack(f);
+            ok=me.send_and_wait_answer(f);
         end
         
         
@@ -342,12 +401,37 @@ classdef Epos2Controller < handle
         
         function []=sendByte(me,b)
             fwrite(me.m_serial, uint8(b),'uint8');
-            fprintf('%02X ',b);
+            if (me.verbosity_level>=2)
+                fprintf('%02X ',b);
+            end
         end
+        function []=sendByteWithStuffing(me,b)
+            fwrite(me.m_serial, uint8(b),'uint8');
+            if (me.usb_protocol && b==me.DLE)
+                fwrite(me.m_serial, uint8(b),'uint8');
+            end
+            if (me.verbosity_level>=2)
+                fprintf('%02X ',b);
+            end
+        end
+        
+        
         function []=sendWord(me,w16)
-            fwrite(me.m_serial, uint8(bitand(w16,h('0xff'))),'uint8'); % low byte
-            fwrite(me.m_serial, uint8( bitsrl(w16,8)),'uint8'); % high byte       
-            fprintf('%04X ',w16);
+            lb = uint8(bitand(w16,h('0xff')));
+            hb = uint8( bitsrl(w16,8));
+            
+            fwrite(me.m_serial, lb,'uint8'); % low byte
+            if (me.usb_protocol && lb==me.DLE)
+                fwrite(me.m_serial, lb,'uint8');
+            end
+                
+            fwrite(me.m_serial, hb,'uint8'); % high byte       
+            if (me.usb_protocol && hb==me.DLE)
+                fwrite(me.m_serial, hb,'uint8');
+            end
+            if (me.verbosity_level>=2)
+                fprintf('%04X ',w16);
+            end
         end
 
     end % end methods
@@ -357,6 +441,10 @@ classdef Epos2Controller < handle
     % ----------------------------------------------------
     properties(Access=protected)
         m_serial = []; % Serial port object
+        
+        % Frame protocol bytes:
+        DLE = 144; % 0x90
+        STX = 2;   % 0x02
         
     end % end protected props    
 end

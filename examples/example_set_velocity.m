@@ -19,6 +19,8 @@ end
 motor1 = Epos2Controller();
 motor1.serial_portname = 'COM3';
 motor1.serial_baudrate = 115200; 
+% motor1.usb_protocol    = 1; % Only for direct usage of the EPOS2 USB connector!
+motor1.verbosity_level = 2;
 
 % Try to connect:
 motor1.connect();
